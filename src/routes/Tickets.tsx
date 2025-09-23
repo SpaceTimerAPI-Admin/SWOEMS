@@ -38,7 +38,7 @@ export default function Tickets(){
     form.reset(); await reload()
   }
 
-  async function addUpdate(ticket_id: number, note: string){
+  async function addUpdate(ticket_id: string, note: string){
     await supabase.from('ticket_updates').insert({ ticket_id, note })
     await reload()
   }

@@ -24,7 +24,7 @@ export default function Projects(){
     form.reset(); await reload()
   }
 
-  async function addUpdate(project_id: number, note: string){
+  async function addUpdate(project_id: string, note: string){
     await supabase.from('project_updates').insert({ project_id, note })
     await reload()
   }
