@@ -1,96 +1,87 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { Button, Card, SectionTitle } from '../components/UI'
+
+type Proc = { id:string; title:string; is_public:boolean; created_at:string }
 
 export default function Procedures(){
-  const [docs, setDocs] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<'all'|'public'|'mine'>('all')
-  const [profileId, setProfileId] = useState<string>('')
-
-  useEffect(() => { (async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    setProfileId(user?.id ?? '')
-    await reload()
-  })() }, [])
+  const [all, setAll] = useState<Proc[]>([])
+  const [q, setQ] = useState('')
+  const [showForm, setShowForm] = useState(false)
+  const [isPublic, setIsPublic] = useState(false)
 
   async function reload(){
-    setLoading(true)
-    const { data } = await supabase.from('procedures').select('*').order('updated_at', { ascending: false })
-    setDocs(data || [])
-    setLoading(false)
+    const { data } = await supabase.from('procedures').select('id,title,is_public,created_at').order('created_at',{ascending:false})
+    setAll((data as any)||[])
   }
 
-  async function createDoc(e: React.FormEvent<HTMLFormElement>){
+  useEffect(()=>{ reload() }, [])
+
+  const filtered = useMemo(()=>{
+    const s=q.trim().toLowerCase()
+    return all.filter(p => !s || p.title.toLowerCase().includes(s))
+  },[all,q])
+
+  async function createProc(e: React.FormEvent<HTMLFormElement>){
     e.preventDefault()
     const f = e.currentTarget as any
     const title = f.title.value.trim()
     const content = f.content.value.trim()
-    const is_public = f.is_public.checked
-    await supabase.from('procedures').insert({ title, content, is_public, owner_id: profileId })
-    f.reset(); await reload()
-  }
-
-  async function saveDoc(doc:any){
-    await supabase.from('procedures').update({ title: doc.title, content: doc.content, is_public: doc.is_public }).eq('id', doc.id)
+    await supabase.from('procedures').insert({ title, content, is_public: isPublic })
+    setShowForm(false)
     await reload()
   }
 
-  const DocCard = ({ d }: { d:any }) => {
-    const [edit, setEdit] = useState(false)
-    const [local, setLocal] = useState(d)
-    const canEdit = d.owner_id === profileId
-    return (
-      <Card className="p-4">
-        <div className="flex items-center justify-between gap-4">
-          <div className="text-base font-semibold">{d.title}</div>
-          <span className={"text-xs px-2 py-1 rounded-full border " + (d.is_public? 'bg-sea-100 text-sea-800 border-sea-200' : 'bg-slate-100 text-slate-700 border-slate-200')}>{d.is_public? 'Public' : 'Private'}</span>
-        </div>
-        {!edit ? (
-          <>
-            <div className="text-xs text-slate-500">Last updated {new Date(d.updated_at).toLocaleString()}</div>
-            <p className="mt-2 whitespace-pre-wrap text-sm">{d.content}</p>
-            {canEdit && <div className="mt-3 flex gap-2"><Button onClick={()=>{setLocal(d); setEdit(true);}}>Edit</Button></div>}
-          </>
-        ) : (
-          <div className="grid gap-2 mt-2">
-            <input className="rounded-xl border px-3 py-2" value={local.title} onChange={e=>setLocal({...local, title:e.target.value})} />
-            <textarea className="rounded-xl border px-3 py-2" rows={4} value={local.content} onChange={e=>setLocal({...local, content:e.target.value})} />
-            <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={local.is_public} onChange={e=>setLocal({...local, is_public:e.target.checked})}/> Public</label>
-            <div className="flex gap-2">
-              <Button onClick={()=>{ saveDoc(local); setEdit(false); }}>Save</Button>
-              <Button className="bg-slate-600" onClick={()=>setEdit(false)}>Cancel</Button>
-            </div>
-          </div>
-        )}
-      </Card>
-    )
-  }
-
-  const filtered = docs.filter(d => filter==='all' ? true : filter==='public' ? d.is_public : d.owner_id===profileId)
-
   return (
-    <div className="space-y-6">
-      <Card className="p-4">
-        <SectionTitle>Create Procedure</SectionTitle>
-        <form className="grid gap-3" onSubmit={createDoc}>
-          <input name="title" className="rounded-xl border px-4 py-2" placeholder="Title" required />
-          <textarea name="content" rows={5} className="rounded-xl border px-4 py-2" placeholder="Steps / notes" required></textarea>
-          <label className="inline-flex items-center gap-2 text-sm"><input name="is_public" type="checkbox"/> Make public</label>
-          <Button type="submit" className="justify-self-start">Save</Button>
-        </form>
-      </Card>
-
-      <div className="flex items-center gap-3">
-        <span className="text-sm text-slate-600">Filter:</span>
-        <select className="rounded-xl border px-3 py-2" value={filter} onChange={e=>setFilter(e.target.value as any)}>
-          <option value="all">All</option>
-          <option value="public">Public</option>
-          <option value="mine">My Private</option>
-        </select>
+    <div className="page-wrap">
+      <div className="row" style={{alignItems:'center', justifyContent:'space-between'}}>
+        <h2 className="section-title">Procedures</h2>
+        <div className="toolbar">
+          <button className="btn" onClick={()=>setShowForm(true)}>New Procedure</button>
+        </div>
       </div>
 
-      <div className="grid gap-4">{loading? <div>Loading...</div> : filtered.map(d => <DocCard key={d.id} d={d} />)}</div>
+      <div className="card">
+        <div className="row">
+          <label>Search <input placeholder="search procedures" value={q} onChange={e=>setQ(e.target.value)} /></label>
+        </div>
+      </div>
+
+      <div className="card" style={{marginTop:12}}>
+        <table className="w-full text-sm">
+          <thead>
+            <tr><th className="text-left p-2">Title</th><th className="text-left p-2">Visibility</th><th className="text-left p-2">Created</th></tr>
+          </thead>
+          <tbody>
+            {filtered.map(p => (
+              <tr key={p.id} className="border-t">
+                <td className="p-2">{p.title}</td>
+                <td className="p-2">{p.is_public ? 'Public' : 'Private'}</td>
+                <td className="p-2">{new Date(p.created_at).toLocaleString()}</td>
+              </tr>
+            ))}
+            {!filtered.length && <tr><td className="p-4 text-slate-500" colSpan={3}>No procedures yet.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      {showForm && (
+        <div className="lightbox" onClick={()=>setShowForm(false)}>
+          <div className="card" style={{width:'min(800px,95vw)'}} onClick={e=>e.stopPropagation()}>
+            <h3 className="section-title">New Procedure</h3>
+            <form className="grid gap-3" onSubmit={createProc}>
+              <label>Title <input name="title" required /></label>
+              <label>Content <textarea name="content" rows={6} required></textarea></label>
+              <label style={{display:'flex',alignItems:'center',gap:8}}>
+                <input type="checkbox" checked={isPublic} onChange={e=>setIsPublic(e.target.checked)} /> Make public
+              </label>
+              <div className="row">
+                <div style={{flex:1}} />
+                <button className="btn" type="submit">Create</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
