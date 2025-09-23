@@ -10,8 +10,11 @@ export default function Projects(){
   const [q, setQ] = useState('')
 
   async function reload(){
-    const { data } = await supabase.from('projects').select('id,title,description,status,created_at').order('created_at',{ascending:false})
-    setAll((data as any)||[])
+    const { data, error } = await supabase
+      .from('projects')
+      .select('id,title,description,status,created_at')
+      .order('created_at',{ascending:false})
+    if (!error) setAll((data as any)||[])
   }
 
   useEffect(()=>{ reload() }, [])
@@ -26,9 +29,11 @@ export default function Projects(){
     const f = e.currentTarget as any
     const title = f.title.value.trim() || '(no title)'
     const description = f.description.value.trim() || null
-    await supabase.from('projects').insert({ title, description, status:'Open' })
-    setShowForm(false)
-    await reload()
+    const { error } = await supabase.from('projects').insert({ title, description, status:'Open' })
+    if (!error){
+      setShowForm(false)
+      await reload()
+    }
   }
 
   return (
@@ -63,7 +68,7 @@ export default function Projects(){
                 <div className="text-base font-semibold">{p.title}</div>
                 <div className="kv">{new Date(p.created_at).toLocaleString()}</div>
               </div>
-              <span className={\`badge \${p.status==='Open'?'open':'closed'}\`}>{p.status}</span>
+              <span className={`badge ${p.status==='Open' ? 'open' : 'closed'}`}>{p.status}</span>
             </div>
             {p.description && <p className="mt-2">{p.description}</p>}
           </div>
