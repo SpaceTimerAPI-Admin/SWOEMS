@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EMS Dashboard</title>
+  <!-- Tailwind Play CDN for quick styling -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            sea: {
+              50: '#ecfeff',
+              100: '#cffafe',
+              200: '#a5f3fc',
+              300: '#67e8f9',
+              400: '#22d3ee',
+              500: '#06b6d4',
+              600: '#0891b2',
+              700: '#0e7490',
+              800: '#155e75',
+              900: '#164e63'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Icons -->
+  <script src="https://unpkg.com/feather-icons"></script>
+  <!-- React + Babel for no-build demo (swap to Vite/Next in production) -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    html, body, #root { height: 100%; }
+    /* Bubble buttons */
+    .bubble { @apply w-full rounded-2xl py-6 px-6 shadow-lg bg-white/90 hover:bg-white transition flex items-center gap-4 border border-white/40; }
+  </style>
+</head>
+<body class="min-h-full bg-gradient-to-b from-sea-100 via-sea-200 to-sea-300 text-slate-800">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    // ===============
+    // QUICK START DOCS
+    // ===============
+    // 1) In Supabase, create a new project. Copy your Project URL and anon key.
+    // 2) Replace SUPABASE_URL and SUPABASE_ANON below with your real values.
+    // 3) Run the SQL in the "Schema & RLS" block (below) in the Supabase SQL editor.
+    // 4) Create a Storage bucket named 'ticket-photos' (public) and 'park-assets' (public).
+    // 5) Deploy this single file to Netlify (drag & drop or connect a GitHub repo). Done!
+    //    Admin account: Anthony.McHughNH@gmail.com (set a password; the UI assumes 'admin' on first run for convenience).
+
+    // -----------------
+    // ENV PLACEHOLDERS
+    // -----------------
+    const SUPABASE_URL = "https://YOUR-PROJECT.supabase.co"; // <-- replace
+    const SUPABASE_ANON = "YOUR_PUBLIC_ANON_KEY"; // <-- replace (safe to expose)
+
+    const ADMIN_EMAIL = "Anthony.McHughNH@gmail.com";
+
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+    // ----------------------
+    // SIMPLE UTIL COMPONENTS
+    // ----------------------
+    const Button = ({ className = '', ...props }) => (
+      <button className={"rounded-xl px-4 py-2 font-medium shadow hover:shadow-md active:scale-[.99] transition bg-sea-600 text-white disabled:opacity-50 " + className} {...props} />
+    );
+
+    const Card = ({ className = '', ...props }) => (
+      <div className={"rounded-2xl bg-white/90 backdrop-blur border border-white/50 shadow " + className} {...props} />
+    );
+
+    const SectionTitle = ({ children }) => (
+      <h2 className="text-lg font-semibold text-sea-900 mb-3">{children}</h2>
+    );
+
+    // --------------
+    // AUTH + PROFILE
+    // --------------
+    async function getProfile() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+      const { data, error } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+      if (error && error.code !== 'PGRST116') console.error(error);
+      return data || null;
+    }
+
+    function TopBar({ onHome, onSettings }) {
+      return (
+        <div className="w-full sticky top-0 z-10 bg-sea-800/90 backdrop-blur border-b border-white/10">
+          <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between">
+            <a href="#" onClick={e => { e.preventDefault(); onHome(); }} className="text-white font-semibold text-xl tracking-wide">EMS Dashboard</a>
+            <button aria-label="Settings" onClick={onSettings} className="text-white/90 hover:text-white">
+              <i data-feather="settings"></i>
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    function Bubble({ icon, title, subtitle, onClick }) {
+      return (
+        <button onClick={onClick} className="bubble">
+          <div className="p-3 rounded-full bg-sea-600 text-white shadow">
+            <i data-feather={icon}></i>
+          </div>
+          <div className="text-left">
+            <div className="text-lg font-semibold text-sea-900">{title}</div>
+            {subtitle && <div className="text-sm text-sea-800/70">{subtitle}</div>}
+          </div>
+        </button>
+      );
+    }
+
+    // ----------------
+    // AUTH SCREENS
+    // ----------------
+    function AuthScreen({ goRegister }) {
+      const [email, setEmail] = React.useState('');
+      const [password, setPassword] = React.useState('');
+      const [error, setError] = React.useState('');
+
+      async function handleSignIn(e){
+        e.preventDefault();
+        setError('');
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) setError(error.message);
+      }
+
+      return (
+        <div className="min-h-[80vh] grid place-items-center px-4">
+          <Card className="w-full max-w-md p-6">
+            <div className="text-center mb-6">
+              <div className="mx-auto w-14 h-14 rounded-2xl bg-sea-600 grid place-items-center shadow text-white mb-3">
+                <i data-feather="activity"></i>
+              </div>
+              <h1 className="text-2xl font-bold text-sea-900">EMS Dashboard</h1>
+              <p className="text-sm text-sea-800/70">Sign in to continue</p>
+            </div>
+            <form onSubmit={handleSignIn} className="space-y-3">
+              <input type="email" className="w-full rounded-xl border border-slate-300/70 px-4 py-2" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} required />
+              <input type="password" className="w-full rounded-xl border border-slate-300/70 px-4 py-2" placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)} required />
+              {error && <div className="text-red-600 text-sm">{error}</div>}
+              <Button type="submit" className="w-full">Sign In</Button>
+            </form>
+            <div className="mt-4 text-sm text-center">
+              New here?{' '}
+              <a href="#" className="text-sea-700 font-semibold" onClick={(e)=>{e.preventDefault(); goRegister();}}>Create an account</a>
+            </div>
+          </Card>
+        </div>
+      );
+    }
+
+    function RegisterScreen({ goSignIn }) {
+      const [email, setEmail] = React.useState('');
+      const [password, setPassword] = React.useState('');
+      const [full_name, setFullName] = React.useState('');
+      const [submitting, setSubmitting] = React.useState(false);
+      const [message, setMessage] = React.useState('');
+
+      async function handleRegister(e){
+        e.preventDefault();
+        setSubmitting(true); setMessage('');
+        const { data, error } = await supabase.auth.signUp({ email, password });
+        if (error){ setMessage(error.message); setSubmitting(false); return; }
+        // Create profile with approved=false
+        const userId = data.user?.id;
+        if (userId){
+          await supabase.from('profiles').insert({ id: userId, email, full_name, approved: email === ADMIN_EMAIL });
+        }
+        setMessage('Account created! You will be able to sign in once an admin approves you.');
+        setSubmitting(false);
+      }
+
+      return (
+        <div className="min-h-[80vh] grid place-items-center px-4">
+          <Card className="w-full max-w-md p-6">
+            <h2 className="text-xl font-bold text-sea-900 mb-2">Create your account</h2>
+            <p className="text-sm text-sea-800/70 mb-4">New users must be approved before first login.</p>
+            <form onSubmit={handleRegister} className="space-y-3">
+              <input className="w-full rounded-xl border border-slate-300/70 px-4 py-2" placeholder="Full name" value={full_name} onChange={e=>setFullName(e.target.value)} />
+              <input type="email" className="w-full rounded-xl border border-slate-300/70 px-4 py-2" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} required />
+              <input type="password" className="w-full rounded-xl border border-slate-300/70 px-4 py-2" placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)} required />
+              <Button disabled={submitting} type="submit" className="w-full">{submitting? 'Creating...' : 'Register'}</Button>
+            </form>
+            {message && <div className="mt-3 text-sm">{message}</div>}
+            <div className="mt-4 text-sm text-center">
+              Already have an account?{' '}<a href="#" onClick={(e)=>{e.preventDefault(); goSignIn();}} className="text-sea-700 font-semibold">Sign in</a>
+            </div>
+          </Card>
+        </div>
+      );
+    }
+
+    // -------------------
+    // DASHBOARD PAGES
+    // -------------------
+
+    function TicketsPage({ profile }){
+      const [myTickets, setMyTickets] = React.useState([]);
+      const [teamTickets, setTeamTickets] = React.useState([]);
+      const [loading, setLoading] = React.useState(true);
+
+      async function load(){
+        setLoading(true);
+        const userId = profile?.id;
+        const { data: mine } = await supabase.from('tickets').select('*, ticket_updates(*), owner:profiles(id, full_name, email)').eq('owner_id', userId).order('created_at', { ascending: false });
+        const { data: others } = await supabase.from('tickets').select('*, ticket_updates(*), owner:profiles(id, full_name, email)').neq('owner_id', userId).order('created_at', { ascending: false });
+        setMyTickets(mine || []); setTeamTickets(others || []); setLoading(false);
+      }
+
+      React.useEffect(()=>{ load(); }, []);
+
+      async function createTicket(e){
+        e.preventDefault();
+        const form = e.target;
+        const title = form.title.value.trim();
+        const description = form.description.value.trim();
+        const status = 'Open';
+        let photo_url = null;
+        const file = form.photo.files?.[0];
+        if (file){
+          const path = `${profile.id}/${Date.now()}-${file.name}`;
+          const { data, error } = await supabase.storage.from('ticket-photos').upload(path, file);
+          if (!error){
+            const { data: pub } = supabase.storage.from('ticket-photos').getPublicUrl(path);
+            photo_url = pub.publicUrl;
+          }
+        }
+        await supabase.from('tickets').insert({ title, description, status, owner_id: profile.id, photo_url });
+        form.reset(); await load();
+      }
+
+      async function addUpdate(ticket_id, note){
+        await supabase.from('ticket_updates').insert({ ticket_id, note });
+        await load();
+      }
+
+      async function toggleStatus(ticket){
+        const next = ticket.status === 'Open' ? 'Closed' : 'Open';
+        await supabase.from('tickets').update({ status: next }).eq('id', ticket.id);
+        await load();
+      }
+
+      const TicketCard = ({ t }) => (
+        <Card className="p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-base font-semibold">{t.title}</div>
+              <div className="text-xs text-slate-500">By {t.owner?.full_name || t.owner?.email} • {new Date(t.created_at).toLocaleString()}</div>
+            </div>
+            <Button onClick={()=>toggleStatus(t)} className={t.status === 'Open' ? 'bg-sea-600' : 'bg-slate-600'}>
+              {t.status}
+            </Button>
+          </div>
+          {t.photo_url && <img src={t.photo_url} alt="ticket" className="mt-3 w-full max-h-64 object-cover rounded-xl"/>}
+          <p className="mt-3 text-sm whitespace-pre-wrap">{t.description}</p>
+          <SectionTitle>Updates</SectionTitle>
+          <div className="space-y-2 max-h-40 overflow-auto">
+            {(t.ticket_updates||[]).map(u => (
+              <div key={u.id} className="text-sm p-2 rounded-lg bg-white border">
+                <div className="text-xs text-slate-500">{new Date(u.created_at).toLocaleString()}</div>
+                <div>{u.note}</div>
+              </div>
+            ))}
+          </div>
+          <form className="mt-3 flex gap-2" onSubmit={async e=>{e.preventDefault(); const note=e.target.note.value; if(note){ await addUpdate(t.id, note); e.target.reset(); }}}>
+            <input name="note" className="flex-1 rounded-xl border px-3 py-2" placeholder="Add update..." />
+            <Button type="submit">Add</Button>
+          </form>
+        </Card>
+      );
+
+      return (
+        <div className="space-y-6">
+          <Card className="p-4">
+            <SectionTitle>Create Ticket</SectionTitle>
+            <form className="grid gap-3" onSubmit={createTicket}>
+              <input name="title" className="rounded-xl border px-4 py-2" placeholder="Title" required />
+              <textarea name="description" className="rounded-xl border px-4 py-2" placeholder="Description" rows={3}></textarea>
+              <input name="photo" type="file" accept="image/*" capture="environment" className="rounded-xl border px-4 py-2" />
+              <Button type="submit" className="justify-self-start">Submit Ticket</Button>
+            </form>
+          </Card>
+
+          <div className="grid md:grid-cols-2 gap-6">
+            <div>
+              <SectionTitle>My Tickets</SectionTitle>
+              <div className="grid gap-4">{loading? <div>Loading...</div> : myTickets.map(t => <TicketCard key={t.id} t={t} />)}</div>
+            </div>
+            <div>
+              <SectionTitle>Team Tickets</SectionTitle>
+              <div className="grid gap-4">{loading? <div>Loading...</div> : teamTickets.map(t => <TicketCard key={t.id} t={t} />)}</div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function ProjectsPage(){
+      const [projects, setProjects] = React.useState([]);
+      const [loading, setLoading] = React.useState(true);
+
+      async function load(){
+        setLoading(true);
+        const { data } = await supabase.from('projects').select('*, project_updates(*)').order('created_at', { ascending: false });
+        setProjects(data || []); setLoading(false);
+      }
+      React.useEffect(()=>{ load(); }, []);
+
+      async function createProject(e){
+        e.preventDefault();
+        const form = e.target;
+        const title = form.title.value.trim();
+        const description = form.description.value.trim();
+        await supabase.from('projects').insert({ title, description, status: 'Open' });
+        form.reset(); await load();
+      }
+
+      async function addUpdate(project_id, note){
+        await supabase.from('project_updates').insert({ project_id, note });
+        await load();
+      }
+
+      async function toggleStatus(project){
+        const next = project.status === 'Open' ? 'Closed' : 'Open';
+        await supabase.from('projects').update({ status: next }).eq('id', project.id);
+        await load();
+      }
+
+      const ProjectCard = ({ p }) => (
+        <Card className="p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-base font-semibold">{p.title}</div>
+              <div className="text-xs text-slate-500">{new Date(p.created_at).toLocaleString()}</div>
+            </div>
+            <Button onClick={()=>toggleStatus(p)} className={p.status === 'Open' ? 'bg-sea-600' : 'bg-slate-600'}>
+              {p.status}
+            </Button>
+          </div>
+          <p className="mt-3 text-sm whitespace-pre-wrap">{p.description}</p>
+          <SectionTitle>Updates</SectionTitle>
+          <div className="space-y-2 max-h-40 overflow-auto">
+            {(p.project_updates||[]).map(u => (
+              <div key={u.id} className="text-sm p-2 rounded-lg bg-white border">
+                <div className="text-xs text-slate-500">{new Date(u.created_at).toLocaleString()}</div>
+                <div>{u.note}</div>
+              </div>
+            ))}
+          </div>
+          <form className="mt-3 flex gap-2" onSubmit={async e=>{e.preventDefault(); const note=e.target.note.value; if(note){ await addUpdate(p.id, note); e.target.reset(); }}}>
+            <input name="note" className="flex-1 rounded-xl border px-3 py-2" placeholder="Add update..." />
+            <Button type="submit">Add</Button>
+          </form>
+        </Card>
+      );
+
+      return (
+        <div className="space-y-6">
+          <Card className="p-4">
+            <SectionTitle>Create Project</SectionTitle>
+            <form className="grid gap-3" onSubmit={createProject}>
+              <input name="title" className="rounded-xl border px-4 py-2" placeholder="Title" required />
+              <textarea name="description" className="rounded-xl border px-4 py-2" placeholder="Description" rows={3}></textarea>
+              <Button type="submit" className="justify-self-start">Add Project</Button>
+            </form>
+          </Card>
+          <div className="grid gap-4">{loading? <div>Loading...</div> : projects.map(p => <ProjectCard key={p.id} p={p} />)}</div>
+        </div>
+      );
+    }
+
+    function ParkMapPage(){
+      const [mapUrl, setMapUrl] = React.useState('');
+      const [uploading, setUploading] = React.useState(false);
+
+      React.useEffect(()=>{
+        // Try to load a default map named 'map.png'
+        const { data } = supabase.storage.from('park-assets').getPublicUrl('map.png');
+        setMapUrl(data.publicUrl);
+      }, []);
+
+      async function onUpload(e){
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setUploading(true);
+        await supabase.storage.from('park-assets').upload('map.png', file, { upsert: true });
+        const { data } = supabase.storage.from('park-assets').getPublicUrl('map.png');
+        setMapUrl(data.publicUrl);
+        setUploading(false);
+      }
+
+      return (
+        <div className="space-y-4">
+          <Card className="p-4">
+            <SectionTitle>Theme Park Map</SectionTitle>
+            <p className="text-sm text-slate-600 mb-2">Upload a map image (admins recommended). It will be visible to everyone.</p>
+            <input type="file" accept="image/*" onChange={onUpload} />
+          </Card>
+          {mapUrl ? (
+            <img src={mapUrl} alt="Park Map" className="w-full rounded-2xl shadow border" />
+          ) : (
+            <Card className="p-8 text-center">No map uploaded yet.</Card>
+          )}
+        </div>
+      );
+    }
+
+    function ProceduresPage({ profile }){
+      const [docs, setDocs] = React.useState([]);
+      const [loading, setLoading] = React.useState(true);
+      const [filter, setFilter] = React.useState('all');
+
+      async function load(){
+        setLoading(true);
+        // public + my private
+        const { data } = await supabase.from('procedures').select('*').or(`is_public.eq.true,owner_id.eq.${profile.id}`).order('updated_at', { ascending: false });
+        setDocs(data || []); setLoading(false);
+      }
+      React.useEffect(()=>{ load(); }, []);
+
+      async function createDoc(e){
+        e.preventDefault();
+        const form = e.target;
+        const title = form.title.value.trim();
+        const content = form.content.value.trim();
+        const is_public = form.is_public.checked;
+        await supabase.from('procedures').insert({ title, content, is_public, owner_id: profile.id });
+        form.reset(); await load();
+      }
+
+      async function saveDoc(doc){
+        await supabase.from('procedures').update({ title: doc.title, content: doc.content, is_public: doc.is_public }).eq('id', doc.id);
+        await load();
+      }
+
+      const DocCard = ({ d }) => {
+        const [edit, setEdit] = React.useState(false);
+        const [local, setLocal] = React.useState(d);
+        const canEdit = d.owner_id === profile.id;
+        return (
+          <Card className="p-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="text-base font-semibold">{d.title}</div>
+              <span className={"text-xs px-2 py-1 rounded-full border " + (d.is_public? 'bg-sea-100 text-sea-800 border-sea-200' : 'bg-slate-100 text-slate-700 border-slate-200')}>{d.is_public? 'Public' : 'Private'}</span>
+            </div>
+            {!edit ? (
+              <>
+                <div className="text-xs text-slate-500">Last updated {new Date(d.updated_at).toLocaleString()}</div>
+                <p className="mt-2 whitespace-pre-wrap text-sm">{d.content}</p>
+                {canEdit && <div className="mt-3 flex gap-2"><Button onClick={()=>{setLocal(d); setEdit(true);}}>Edit</Button></div>}
+              </>
+            ) : (
+              <div className="grid gap-2 mt-2">
+                <input className="rounded-xl border px-3 py-2" value={local.title} onChange={e=>setLocal({...local, title:e.target.value})} />
+                <textarea className="rounded-xl border px-3 py-2" rows={4} value={local.content} onChange={e=>setLocal({...local, content:e.target.value})} />
+                <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={local.is_public} onChange={e=>setLocal({...local, is_public:e.target.checked})}/> Public</label>
+                <div className="flex gap-2">
+                  <Button onClick={()=>{ saveDoc(local); setEdit(false); }}>Save</Button>
+                  <Button className="bg-slate-600" onClick={()=>setEdit(false)}>Cancel</Button>
+                </div>
+              </div>
+            )}
+          </Card>
+        );
+      }
+
+      const filtered = docs.filter(d => filter==='all' ? true : filter==='public' ? d.is_public : d.owner_id===profile.id);
+
+      return (
+        <div className="space-y-6">
+          <Card className="p-4">
+            <SectionTitle>Create Procedure</SectionTitle>
+            <form className="grid gap-3" onSubmit={createDoc}>
+              <input name="title" className="rounded-xl border px-4 py-2" placeholder="Title" required />
+              <textarea name="content" rows={5} className="rounded-xl border px-4 py-2" placeholder="Steps / notes" required></textarea>
+              <label className="inline-flex items-center gap-2 text-sm"><input name="is_public" type="checkbox"/> Make public</label>
+              <Button type="submit" className="justify-self-start">Save</Button>
+            </form>
+          </Card>
+
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-slate-600">Filter:</span>
+            <select className="rounded-xl border px-3 py-2" value={filter} onChange={e=>setFilter(e.target.value)}>
+              <option value="all">All</option>
+              <option value="public">Public</option>
+              <option value="mine">My Private</option>
+            </select>
+          </div>
+
+          <div className="grid gap-4">{loading? <div>Loading...</div> : filtered.map(d => <DocCard key={d.id} d={d} />)}</div>
+        </div>
+      );
+    }
+
+    function AdminPanel(){
+      const [users, setUsers] = React.useState([]);
+      async function load(){
+        const { data } = await supabase.from('profiles').select('id, email, full_name, approved, created_at').order('created_at', { ascending: false });
+        setUsers(data || []);
+      }
+      React.useEffect(()=>{ load(); }, []);
+
+      async function setApproved(id, approved){
+        await supabase.from('profiles').update({ approved }).eq('id', id);
+        await load();
+      }
+
+      return (
+        <Card className="p-4">
+          <SectionTitle>Admin — User Approvals</SectionTitle>
+          <div className="overflow-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-slate-500">
+                  <th className="py-2">Name</th>
+                  <th>Email</th>
+                  <th>Approved</th>
+                  <th>Joined</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map(u => (
+                  <tr key={u.id} className="border-t">
+                    <td className="py-2">{u.full_name || '—'}</td>
+                    <td>{u.email}</td>
+                    <td>{u.approved? 'Yes':'No'}</td>
+                    <td>{new Date(u.created_at).toLocaleDateString()}</td>
+                    <td>
+                      <div className="flex gap-2">
+                        <Button onClick={()=>setApproved(u.id, true)}>Approve</Button>
+                        <Button className="bg-slate-600" onClick={()=>setApproved(u.id, false)}>Revoke</Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      );
+    }
+
+    // -------------------
+    // MAIN APP SHELL
+    // -------------------
+    function App(){
+      const [view, setView] = React.useState('auth'); // auth | register | home | tickets | projects | map | procedures | settings | admin
+      const [profile, setProfile] = React.useState(null);
+      const [pending, setPending] = React.useState(false);
+
+      React.useEffect(()=>{
+        feather.replace();
+        const sub = supabase.auth.onAuthStateChange(async (e) => {
+          if (e === 'SIGNED_IN' || e === 'TOKEN_REFRESHED' || e === 'INITIAL_SESSION'){ await refreshProfile(); }
+          if (e === 'SIGNED_OUT'){ setProfile(null); setView('auth'); }
+        });
+        refreshProfile();
+        return () => sub.data?.subscription?.unsubscribe();
+      }, []);
+
+      async function refreshProfile(){
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user){ setView('auth'); return; }
+        let p = await getProfile();
+        if (!p){
+          // First sign-in after external registration protection — ensure profile exists
+          const email = user.email;
+          const full_name = user.user_metadata?.full_name || '';
+          const approved = email === ADMIN_EMAIL; // auto-approve admin
+          await supabase.from('profiles').insert({ id: user.id, email, full_name, approved }).select();
+          p = await getProfile();
+        }
+        setProfile(p);
+        if (!p.approved){ setPending(true); setView('settings'); } else { setPending(false); setView('home'); }
+      }
+
+      async function signOut(){ await supabase.auth.signOut(); }
+
+      function Home(){
+        return (
+          <div className="mx-auto max-w-3xl px-4 py-8 space-y-4">
+            <div className="grid gap-3">
+              <Bubble icon="tool" title="Tickets" subtitle="Create & track maintenance tickets" onClick={()=>setView('tickets')} />
+              <Bubble icon="briefcase" title="Team Projects" subtitle="Shared project updates" onClick={()=>setView('projects')} />
+              <Bubble icon="map" title="Park Map" subtitle="Quick access to the park map" onClick={()=>setView('map')} />
+              <Bubble icon="file-text" title="Procedures" subtitle="Everyday procedures • public/private" onClick={()=>setView('procedures')} />
+            </div>
+          </div>
+        );
+      }
+
+      function Settings(){
+        const [full_name, setFullName] = React.useState(profile?.full_name || '');
+
+        async function save(e){
+          e.preventDefault();
+          await supabase.from('profiles').update({ full_name }).eq('id', profile.id);
+          await refreshProfile();
+        }
+
+        return (
+          <div className="mx-auto max-w-xl px-4 py-8 space-y-4">
+            {pending && <Card className="p-4 border-2 border-amber-400 bg-amber-50">
+              <div className="font-semibold">Awaiting approval</div>
+              <div className="text-sm">Your account is pending approval by an administrator.</div>
+            </Card>}
+
+            <Card className="p-4">
+              <SectionTitle>Profile</SectionTitle>
+              <form className="grid gap-3" onSubmit={save}>
+                <input className="rounded-xl border px-4 py-2" placeholder="Full name" value={full_name} onChange={e=>setFullName(e.target.value)} />
+                <Button type="submit" className="justify-self-start">Save</Button>
+              </form>
+            </Card>
+
+            {profile?.email === ADMIN_EMAIL && (
+              <AdminPanel />
+            )}
+
+            <div>
+              <Button className="bg-slate-700" onClick={signOut}>Log out</Button>
+            </div>
+          </div>
+        );
+      }
+
+      if (view==='auth') return <AuthScreen goRegister={()=>setView('register')} />;
+      if (view==='register') return <RegisterScreen goSignIn={()=>setView('auth')} />;
+
+      return (
+        <div className="min-h-screen flex flex-col">
+          <TopBar onHome={()=>setView('home')} onSettings={()=>setView('settings')} />
+          <main className="flex-1 mx-auto w-full max-w-6xl px-4 py-6 space-y-6">
+            {view==='home' && <Home />}
+            {view==='tickets' && <TicketsPage profile={profile} />}
+            {view==='projects' && <ProjectsPage />}
+            {view==='map' && <ParkMapPage />}
+            {view==='procedures' && <ProceduresPage profile={profile} />}
+            {view==='settings' && <Settings />}
+          </main>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  </script>
+
+  <!-- =====================
+       SUPABASE SCHEMA & RLS
+       Paste into Supabase SQL editor
+       =====================
+
+-- Enable UUID
+create extension if not exists "uuid-ossp";
+
+-- Profiles
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  email text unique,
+  full_name text,
+  approved boolean default false,
+  created_at timestamp with time zone default now()
+);
+
+-- Tickets
+create table if not exists public.tickets (
+  id bigserial primary key,
+  owner_id uuid references public.profiles(id) on delete set null,
+  title text not null,
+  description text,
+  photo_url text,
+  status text check (status in ('Open','Closed')) default 'Open',
+  created_at timestamp with time zone default now()
+);
+
+create table if not exists public.ticket_updates (
+  id bigserial primary key,
+  ticket_id bigint references public.tickets(id) on delete cascade,
+  note text not null,
+  created_at timestamp with time zone default now()
+);
+
+-- Projects
+create table if not exists public.projects (
+  id bigserial primary key,
+  title text not null,
+  description text,
+  status text check (status in ('Open','Closed')) default 'Open',
+  created_at timestamp with time zone default now()
+);
+
+create table if not exists public.project_updates (
+  id bigserial primary key,
+  project_id bigint references public.projects(id) on delete cascade,
+  note text not null,
+  created_at timestamp with time zone default now()
+);
+
+-- Procedures
+create table if not exists public.procedures (
+  id bigserial primary key,
+  owner_id uuid references public.profiles(id) on delete set null,
+  title text not null,
+  content text not null,
+  is_public boolean default false,
+  created_at timestamp with time zone default now(),
+  updated_at timestamp with time zone default now()
+);
+
+create or replace function public.touch_updated_at()
+returns trigger as $$ begin new.updated_at = now(); return new; end; $$ language plpgsql;
+create trigger procedures_touch before update on public.procedures
+for each row execute procedure public.touch_updated_at();
+
+-- RLS
+alter table public.profiles enable row level security;
+alter table public.tickets enable row level security;
+alter table public.ticket_updates enable row level security;
+alter table public.projects enable row level security;
+alter table public.project_updates enable row level security;
+alter table public.procedures enable row level security;
+
+-- Profiles: users can read themselves; admin can read/write all; everyone can read emails to display owners
+create policy "read own profile" on public.profiles for select using ( auth.uid() = id );
+create policy "read minimal profile" on public.profiles for select using ( true );
+create policy "update own profile" on public.profiles for update using ( auth.uid() = id );
+create policy "admin manage profiles" on public.profiles for update using ( auth.email() = '${ADMIN_EMAIL}' );
+create policy "insert self profile" on public.profiles for insert with check ( auth.uid() = id );
+
+-- Tickets: anyone approved can CRUD their own; read all; status updates by owner or admin
+create policy "tickets insert" on public.tickets for insert with check ( exists(select 1 from public.profiles p where p.id=auth.uid() and p.approved = true) );
+create policy "tickets select" on public.tickets for select using ( true );
+create policy "tickets update own or admin" on public.tickets for update using ( owner_id = auth.uid() or auth.email() = '${ADMIN_EMAIL}' );
+
+create policy "ticket updates insert if approved" on public.ticket_updates for insert with check ( exists(select 1 from public.profiles p where p.id=auth.uid() and p.approved=true) );
+create policy "ticket updates select all" on public.ticket_updates for select using ( true );
+
+-- Projects: approved users can create/read; ownerless shared model so updates allowed if approved
+create policy "projects insert" on public.projects for insert with check ( exists(select 1 from public.profiles p where p.id=auth.uid() and p.approved=true) );
+create policy "projects select" on public.projects for select using ( true );
+create policy "projects update if approved or admin" on public.projects for update using ( exists(select 1 from public.profiles p where p.id=auth.uid() and p.approved=true) or auth.email()='${ADMIN_EMAIL}' );
+
+create policy "project updates insert if approved" on public.project_updates for insert with check ( exists(select 1 from public.profiles p where p.id=auth.uid() and p.approved=true) );
+create policy "project updates select all" on public.project_updates for select using ( true );
+
+-- Procedures: owner can read/write their docs; everyone can read public ones
+create policy "procedures insert if approved" on public.procedures for insert with check ( exists(select 1 from public.profiles p where p.id=auth.uid() and p.approved=true) );
+create policy "procedures select public or own" on public.procedures for select using ( is_public = true or owner_id = auth.uid() );
+create policy "procedures update own" on public.procedures for update using ( owner_id = auth.uid() );
+
+-- Helper: prevent access if not approved (except profiles)
+-- Optional: use Postgres grants or auth hook to block sign-in; here we simply hide data
+
+-- STORAGE bucket policies (configure in Supabase Storage UI):
+-- ticket-photos: public read, authenticated upload to path auth.uid()/**
+-- park-assets: public read, admin write (or allow all write if simpler)
+
+-- Seed admin (optional — use Supabase Auth UI to create this user and set password 'admin')
+-- insert into auth.users ... (Use dashboard > Authentication > Add user)
+
+  -->
+</body>
+</html>
