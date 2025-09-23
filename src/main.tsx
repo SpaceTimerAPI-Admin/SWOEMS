@@ -13,6 +13,8 @@ import Projects from './routes/Projects'
 import ParkMap from './routes/ParkMap'
 import Procedures from './routes/Procedures'
 import Settings from './routes/Settings'
+import TicketDetail from './routes/TicketDetail'
+
 
 const router = createBrowserRouter([
   { path: '/', element: <SignIn /> },
