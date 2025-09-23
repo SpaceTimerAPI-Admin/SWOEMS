@@ -1,0 +1,2 @@
+-- Full schema omitted for brevity (from canvas doc)
+-- Add profiles, tickets, ticket_updates, projects, project_updates, procedures tables and RLS policies.

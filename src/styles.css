@@ -1,0 +1,5 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.bubble { @apply w-full rounded-2xl py-6 px-6 shadow-lg bg-white/90 hover:bg-white transition flex items-center gap-4 border border-white/40; }
