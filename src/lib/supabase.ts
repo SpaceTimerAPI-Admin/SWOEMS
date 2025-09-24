@@ -1,8 +1,10 @@
 import { createClient } from '@supabase/supabase-js'
 
-export const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL!,
-  import.meta.env.VITE_SUPABASE_ANON_KEY!
-)
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string
 
-export const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL!
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('Missing Supabase env vars. Check Netlify settings.')
+}
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey)
