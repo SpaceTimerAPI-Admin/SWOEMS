@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 
@@ -15,6 +15,16 @@ type Ticket = {
   created_at: string
 }
 
+function toLocalInput(dt: Date){
+  const pad = (n:number)=> String(n).padStart(2,'0')
+  const y = dt.getFullYear()
+  const m = pad(dt.getMonth()+1)
+  const d = pad(dt.getDate())
+  const hh = pad(dt.getHours())
+  const mm = pad(dt.getMinutes())
+  return `${y}-${m}-${d}T${hh}:${mm}`
+}
+
 export default function Tickets(){
   const [all, setAll] = useState<Ticket[]>([])
   const [loading, setLoading] = useState(true)
@@ -22,7 +32,10 @@ export default function Tickets(){
   const [status, setStatus] = useState<'all'|'Open'|'Closed'>('all')
   const [q, setQ] = useState('')
   const [showForm, setShowForm] = useState(false)
+  const [defaultWhen, setDefaultWhen] = useState<string>(toLocalInput(new Date()))
+  const [submitting, setSubmitting] = useState(false)
   const nav = useNavigate()
+  const titleRef = useRef<HTMLInputElement|null>(null)
 
   async function reload(){
     const sel = 'id,title,description,status,priority,location,category,date,photo_url,created_at'
@@ -39,6 +52,13 @@ export default function Tickets(){
     setLoading(false)
   })() }, [])
 
+  useEffect(() => {
+    if (showForm){
+      setDefaultWhen(toLocalInput(new Date()))
+      setTimeout(()=> titleRef.current?.focus(), 50)
+    }
+  }, [showForm])
+
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase()
     return all.filter(t =>
@@ -49,33 +69,52 @@ export default function Tickets(){
 
   async function createTicket(e: React.FormEvent<HTMLFormElement>){
     e.preventDefault()
-    const f = e.currentTarget as any
-    const title = f.title.value.trim() || '(no title)'
-    const location = f.location.value.trim() || null
-    const category = f.category.value.trim() || null
-    const priority = f.priority.value as Ticket['priority']
-    const date = f.date.value ? new Date(f.date.value).toISOString() : new Date().toISOString()
-    const description = f.description.value.trim() || null
+    if (submitting) return
+    setSubmitting(true)
+    try{
+      const f = e.currentTarget as any
+      const title = f.title.value.trim() || '(no title)'
+      const location = f.location.value.trim() || null
+      const category = f.category.value.trim() || null
+      const priority = f.priority.value as Ticket['priority']
+      const dateLocal = f.date.value || defaultWhen
+      const dateISO = new Date(dateLocal).toISOString()
+      const description = f.description.value.trim() || null
 
-    let photo_url: string | null = null
-    const file = f.photo.files?.[0]
-    if (file && profileId){
-      const path = `${profileId}/${Date.now()}-${file.name}`
-      const up = await supabase.storage.from('ticket-photos').upload(path, file)
-      if (!up.error){
-        const { data } = supabase.storage.from('ticket-photos').getPublicUrl(path)
-        photo_url = data.publicUrl
+      let uid = profileId
+      if (!uid){
+        const { data: { user } } = await supabase.auth.getUser()
+        uid = user?.id ?? null
+        setProfileId(uid)
       }
-    }
+      if (!uid){ alert('Not signed in.'); return }
 
-    const { data, error } = await supabase.from('tickets')
-      .insert({ title, location, category, priority, date, description, status: 'Open', owner_id: profileId, photo_url })
-      .select('id')
-      .single()
-    if (error) { alert(error.message); return }
-    setShowForm(false)
-    await reload()                 // ensure it shows
-    nav(`/app/tickets/${data!.id}`) // open just-created
+      let photo_url: string | null = null
+      const file = f.photo.files?.[0]
+      if (file && uid){
+        const path = `${uid}/${Date.now()}-${file.name}`
+        const up = await supabase.storage.from('ticket-photos').upload(path, file)
+        if (!up.error){
+          const { data } = supabase.storage.from('ticket-photos').getPublicUrl(path)
+          photo_url = data.publicUrl
+        }
+      }
+
+      const { data, error } = await supabase.from('tickets')
+        .insert({ title, location, category, priority, date: dateISO, description, status: 'Open', owner_id: uid, photo_url })
+        .select('id')
+        .single()
+      if (error) { alert(error.message); return }
+      f.reset()
+      setShowForm(false)
+      await reload()
+      nav(`/app/tickets/${data!.id}`)
+    } catch(err:any){
+      console.error(err)
+      alert(err?.message || 'Failed to create ticket')
+    } finally{
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -87,7 +126,6 @@ export default function Tickets(){
         </div>
       </div>
 
-      {/* Filters */}
       <div className="card">
         <div className="row">
           <label>Status
@@ -103,20 +141,18 @@ export default function Tickets(){
         </div>
       </div>
 
-      {/* List */}
       <div id="list" className="list" style={{marginTop:12}}>
         {loading ? <div className="notice">Loading...</div> :
           (filtered.length ? filtered.map(t => <Row key={t.id} t={t} onOpen={()=>nav('/app/tickets/'+t.id)} />) : <div className="notice">No tickets yet.</div>)}
       </div>
 
-      {/* Modal form */}
       {showForm && (
         <div className="lightbox" onClick={()=>setShowForm(false)}>
           <div className="card" style={{width:'min(900px,95vw)'}} onClick={e=>e.stopPropagation()}>
             <h3 className="section-title">New Ticket</h3>
             <form className="grid gap-3" onSubmit={createTicket}>
               <div className="row">
-                <label>Title <input name="title" required /></label>
+                <label>Title <input name="title" ref={titleRef} required /></label>
                 <label>Priority
                   <select name="priority" defaultValue="Low">
                     {['Low','Medium','High','Critical'].map(p=> <option key={p}>{p}</option>)}
@@ -131,14 +167,14 @@ export default function Tickets(){
                   </select>
                 </label>
               </div>
-              <label>Date/Time <input name="date" type="datetime-local" /></label>
+              <label>Date/Time <input name="date" type="datetime-local" defaultValue={defaultWhen} /></label>
               <label>Description <textarea name="description" rows={3}></textarea></label>
               <div className="row" style={{marginTop:10}}>
                 <label className="btn small">Add Photo
                   <input type="file" name="photo" accept="image/*" capture="environment" style={{display:'none'}} />
                 </label>
                 <div style={{flex:1}} />
-                <button className="btn" type="submit">Create</button>
+                <button className="btn" type="submit" disabled={submitting}>{submitting?'Creating...':'Create'}</button>
               </div>
             </form>
           </div>
