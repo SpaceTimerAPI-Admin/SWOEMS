@@ -1,181 +1,192 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 
-type Ticket = {
+interface Ticket {
   id: string
   title: string
-  description: string | null
-  status: 'Open' | 'Closed'
-  priority: 'Low' | 'Medium' | 'High' | 'Critical'
-  location: string | null
-  category: string | null
-  date: string
-  photo_url: string | null
-  created_at: string
+  description: string
+  priority: string
+  location: string
+  category: string
+  datetime: string
+  status: string
 }
 
-function toLocalInput(dt: Date){
-  const pad = (n:number)=> String(n).padStart(2,'0')
-  const y = dt.getFullYear()
-  const m = pad(dt.getMonth()+1)
-  const d = pad(dt.getDate())
-  const hh = pad(dt.getHours())
-  const mm = pad(dt.getMinutes())
-  return `${y}-${m}-${d}T${hh}:${mm}`
-}
-
-export default function Tickets(){
-  const [all, setAll] = useState<Ticket[]>([])
+export default function Tickets() {
+  const [tickets, setTickets] = useState<Ticket[]>([])
   const [loading, setLoading] = useState(true)
-  const [status, setStatus] = useState<'all'|'Open'|'Closed'>('all')
-  const [q, setQ] = useState('')
+  const [creating, setCreating] = useState(false)
   const [showForm, setShowForm] = useState(false)
-  const [defaultWhen, setDefaultWhen] = useState<string>(toLocalInput(new Date()))
-  const [submitting, setSubmitting] = useState(false)
-  const nav = useNavigate()
-  const titleRef = useRef<HTMLInputElement|null>(null)
 
-  async function reload(){
-    const sel = 'id,title,description,status,priority,location,category,date,photo_url,created_at'
-    const { data, error } = await supabase.from('tickets').select(sel).order('created_at', { ascending: false })
-    if (error) { alert('Load tickets failed: '+error.message); return }
-    setAll((data as any)||[])
+  const [title, setTitle] = useState('')
+  const [priority, setPriority] = useState('Low')
+  const [location, setLocation] = useState('')
+  const [category, setCategory] = useState('General')
+  const [description, setDescription] = useState('')
+
+  const navigate = useNavigate()
+
+  async function loadTickets() {
+    setLoading(true)
+    const { data, error } = await supabase
+      .from('tickets')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    if (error) console.error('Error loading tickets:', error.message)
+    else setTickets(data || [])
+
+    setLoading(false)
   }
 
-  useEffect(()=>{ (async()=>{ setLoading(true); await reload(); setLoading(false) })() },[])
-  useEffect(()=>{ if(showForm){ setDefaultWhen(toLocalInput(new Date())); setTimeout(()=>titleRef.current?.focus(),50) }},[showForm])
+  useEffect(() => {
+    loadTickets()
+  }, [])
 
-  const filtered = useMemo(()=>{
-    const s = q.trim().toLowerCase()
-    return all.filter(t => (status==='all' || t.status===status) && (!s || JSON.stringify(t).toLowerCase().includes(s)))
-  },[all,status,q])
+  async function handleCreate() {
+    setCreating(true)
 
-  async function createTicket(e: React.FormEvent<HTMLFormElement>){
-    e.preventDefault()
-    if (submitting) return
-    setSubmitting(true)
-    try{
-      const f = e.currentTarget as any
-      const title = f.title.value.trim() || '(no title)'
-      const priority = f.priority.value as Ticket['priority']
-      const location = f.location.value.trim() || null
-      const category = f.category.value.trim() || null
-      const description = f.description.value.trim() || null
-      const dateISO = new Date(f.date.value || defaultWhen).toISOString()
+    const { data, error } = await supabase
+      .from('tickets')
+      .insert([
+        {
+          title,
+          priority,
+          location,
+          category,
+          description,
+          datetime: new Date().toISOString(),
+          status: 'Open',
+        },
+      ])
+      .select()
+      .single()
 
-      // Photo optional
-      let photo_url: string | null = null
-      const file = f.photo?.files?.[0]
-      if (file){
-        // upload but do not block the insert on failure
-        const path = `${Date.now()}-${file.name}`
-        const up = await supabase.storage.from('ticket-photos').upload(path, file)
-        if (!up.error){
-          const { data } = supabase.storage.from('ticket-photos').getPublicUrl(path)
-          photo_url = data.publicUrl
-        }
-      }
+    if (error) {
+      alert('Error creating ticket: ' + error.message)
+      console.error(error)
+      setCreating(false)
+      return
+    }
 
-      // Rely on DB trigger to set owner_id = auth.uid()
-      const { data, error } = await supabase.from('tickets')
-        .insert({ title, description, priority, location, category, date: dateISO, status:'Open', photo_url })
-        .select('id')
-        .single()
-      if (error) throw error
-
-      const id = data!.id as string
-      // optimistic update
-      setAll(prev => [{ id, title, description, priority, location, category, date: dateISO, status:'Open', photo_url, created_at:new Date().toISOString() } as any, ...prev])
-      f.reset(); setShowForm(false); setSubmitting(false)
-      nav('/app/tickets/'+id)
-    }catch(err:any){
-      alert('Create failed: ' + (err?.message || JSON.stringify(err)))
-      setSubmitting(false)
+    if (data) {
+      setShowForm(false)
+      setCreating(false)
+      await loadTickets()
+      navigate(`/app/tickets/${data.id}`)
     }
   }
 
   return (
-    <div className="page-wrap">
-      <div className="row" style={{alignItems:'center', justifyContent:'space-between'}}>
-        <h2 className="section-title">Tickets</h2>
-        <div className="toolbar">
-          <button className="btn" onClick={()=>setShowForm(true)}>New Ticket</button>
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="row">
-          <label>Status
-            <select value={status} onChange={e=>setStatus(e.target.value as any)}>
-              <option value="all">All</option>
-              <option>Open</option>
-              <option>Closed</option>
-            </select>
-          </label>
-          <label>Search
-            <input placeholder="text, location, category" value={q} onChange={e=>setQ(e.target.value)} />
-          </label>
-        </div>
-      </div>
-
-      <div className="list" style={{marginTop:12}}>
-        {loading ? <div className="notice">Loading...</div> :
-          (filtered.length ? filtered.map(t => <Row key={t.id} t={t} onOpen={()=>nav('/app/tickets/'+t.id)} />) : <div className="notice">No tickets yet.</div>)}
+    <div className="p-6">
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-xl font-semibold">Tickets</h1>
+        <button
+          onClick={() => setShowForm(true)}
+          className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
+        >
+          New Ticket
+        </button>
       </div>
 
       {showForm && (
-        <div className="lightbox" onClick={()=>setShowForm(false)}>
-          <div className="card" style={{width:'min(900px,95vw)'}} onClick={e=>e.stopPropagation()}>
-            <h3 className="section-title">New Ticket</h3>
-            <form className="grid gap-3" onSubmit={createTicket}>
-              <div className="row">
-                <label>Title <input name="title" ref={titleRef} required /></label>
-                <label>Priority
-                  <select name="priority" defaultValue="Low">
-                    {['Low','Medium','High','Critical'].map(p=> <option key={p}>{p}</option>)}
-                  </select>
-                </label>
-              </div>
-              <div className="row">
-                <label>Location <input name="location" /></label>
-                <label>Category
-                  <select name="category" defaultValue="General">
-                    {['General','Electrical','Plumbing','Ride','Show/Venue','Safety'].map(c=> <option key={c}>{c}</option>)}
-                  </select>
-                </label>
-              </div>
-              <label>Date/Time <input name="date" type="datetime-local" defaultValue={defaultWhen} /></label>
-              <label>Description <textarea name="description" rows={3}></textarea></label>
-              <div className="row" style={{marginTop:10}}>
-                <label className="btn small">Add Photo
-                  <input type="file" name="photo" accept="image/*" capture="environment" style={{display:'none'}} />
-                </label>
-                <div style={{flex:1}} />
-                <button className="btn" type="submit" disabled={submitting}>{submitting?'Creating...':'Create'}</button>
-              </div>
-            </form>
+        <div className="p-4 bg-gray-100 rounded mb-4 shadow">
+          <h2 className="text-lg font-bold mb-3">New Ticket</h2>
+
+          <div className="grid grid-cols-2 gap-3">
+            <input
+              type="text"
+              placeholder="Title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="border p-2 rounded"
+            />
+            <select
+              value={priority}
+              onChange={(e) => setPriority(e.target.value)}
+              className="border p-2 rounded"
+            >
+              <option>Low</option>
+              <option>Medium</option>
+              <option>High</option>
+            </select>
+
+            <input
+              type="text"
+              placeholder="Location"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              className="border p-2 rounded"
+            />
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="border p-2 rounded"
+            >
+              <option>General</option>
+              <option>Ride</option>
+              <option>Food</option>
+              <option>Technical</option>
+            </select>
+          </div>
+
+          <textarea
+            placeholder="Description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            className="border p-2 rounded w-full mt-3"
+          />
+
+          <div className="flex justify-end gap-3 mt-4">
+            <button
+              onClick={() => setShowForm(false)}
+              className="px-4 py-2 rounded bg-gray-400 text-white hover:bg-gray-500"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleCreate}
+              disabled={creating}
+              className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
+            >
+              {creating ? 'Creating…' : 'Create'}
+            </button>
           </div>
         </div>
       )}
-    </div>
-  )
-}
 
-function Row({ t, onOpen }:{ t:Ticket; onOpen:()=>void }){
-  return (
-    <div className="card ticketRow" onClick={onOpen} style={{cursor:'pointer'}}>
-      <div className="meta">
-        <div><b>{t.title || '(no title)'}</b></div>
-        <div className="kv">#{t.id?.slice(0,8)} • {new Date(t.created_at).toLocaleString()}</div>
-        <div className={`badge ${t.status==='Open'?'open':'closed'}`}>{t.status}</div>{' '}
-        <span className="badge prio">{t.priority}</span>
-      </div>
-      <div style={{flex:1}}>
-        <div>{t.description || ''}</div>
-        <div className="kv"><b>Loc:</b> {t.location || '—'} &nbsp; <b>Cat:</b> {t.category || '—'}</div>
-      </div>
-      <div><button className="btn small" onClick={(e)=>{e.stopPropagation(); onOpen();}}>Open</button></div>
+      {loading ? (
+        <p>Loading…</p>
+      ) : tickets.length === 0 ? (
+        <p>No tickets yet.</p>
+      ) : (
+        <ul className="space-y-3">
+          {tickets.map((t) => (
+            <li
+              key={t.id}
+              className="p-4 bg-white shadow rounded cursor-pointer hover:bg-gray-50"
+              onClick={() => navigate(`/app/tickets/${t.id}`)}
+            >
+              <div className="flex justify-between">
+                <h3 className="font-semibold">{t.title}</h3>
+                <span className="text-sm text-gray-500">
+                  {new Date(t.datetime).toLocaleString()}
+                </span>
+              </div>
+              <p className="text-sm text-gray-600">{t.description}</p>
+              <div className="flex gap-2 mt-1">
+                <span className="px-2 py-1 rounded bg-gray-200 text-xs">
+                  {t.priority}
+                </span>
+                <span className="px-2 py-1 rounded bg-gray-200 text-xs">
+                  {t.status}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }
