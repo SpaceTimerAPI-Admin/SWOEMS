@@ -13,6 +13,7 @@ type Ticket = {
   date: string
   photo_url: string | null
   created_at: string
+  owner_id?: string
 }
 
 function toLocalInput(dt: Date){
@@ -38,15 +39,20 @@ export default function Tickets(){
   const titleRef = useRef<HTMLInputElement|null>(null)
 
   async function reload(){
-    const sel = 'id,title,description,status,priority,location,category,date,photo_url,created_at'
+    const sel = 'id,title,description,status,priority,location,category,date,photo_url,created_at,owner_id'
     const { data, error } = await supabase.from('tickets').select(sel).order('created_at', { ascending: false })
-    if (error) { console.error('select tickets', error); return }
+    if (error) {
+      console.error('select tickets', error)
+      alert('Error loading tickets: ' + (error.message || JSON.stringify(error)))
+      return
+    }
     setAll((data as any) || [])
   }
 
   useEffect(() => { (async () => {
     setLoading(true)
-    const { data: { user } } = await supabase.auth.getUser()
+    const { data: { user }, error } = await supabase.auth.getUser()
+    if (error) console.error('getUser error', error)
     setProfileId(user?.id ?? null)
     await reload()
     setLoading(false)
@@ -87,32 +93,45 @@ export default function Tickets(){
         uid = user?.id ?? null
         setProfileId(uid)
       }
-      if (!uid){ alert('Not signed in.'); return }
+      if (!uid){ alert('Not signed in.'); setSubmitting(false); return }
 
+      // Upload optional photo
       let photo_url: string | null = null
       const file = f.photo.files?.[0]
-      if (file && uid){
+      if (file){
         const path = `${uid}/${Date.now()}-${file.name}`
         const up = await supabase.storage.from('ticket-photos').upload(path, file)
-        if (!up.error){
+        if (up.error){
+          console.error('upload error', up.error)
+          alert('Photo upload failed: ' + (up.error.message || JSON.stringify(up.error)))
+        } else {
           const { data } = supabase.storage.from('ticket-photos').getPublicUrl(path)
           photo_url = data.publicUrl
         }
       }
 
+      // Insert and return the new row
       const { data, error } = await supabase.from('tickets')
         .insert({ title, location, category, priority, date: dateISO, description, status: 'Open', owner_id: uid, photo_url })
-        .select('id')
+        .select('id,title,description,status,priority,location,category,date,photo_url,created_at,owner_id')
         .single()
-      if (error) { alert(error.message); return }
+
+      if (error){
+        console.error('insert tickets error', error)
+        alert('Create failed: ' + (error.message || JSON.stringify(error)))
+        setSubmitting(false)
+        return
+      }
+
+      // Optimistic add to list so user sees it immediately
+      setAll(prev => [data as any, ...prev])
       f.reset()
       setShowForm(false)
-      await reload()
+      setSubmitting(false)
       nav(`/app/tickets/${data!.id}`)
     } catch(err:any){
-      console.error(err)
+      console.error('createTicket fatal', err)
       alert(err?.message || 'Failed to create ticket')
-    } finally{
       setSubmitting(false)
     }
   }
